@@ -8,81 +8,110 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController size1Controller = TextEditingController();
-  final TextEditingController price1Controller = TextEditingController();
-  final TextEditingController size2Controller = TextEditingController();
-  final TextEditingController price2Controller = TextEditingController();
+  final List<TextEditingController> sizeControllers = [];
+  final List<TextEditingController> priceControllers = [];
 
   String resultTitle = '';
   String resultDetail = '';
-  int cheaperIndex = 0;
+  int cheaperIndex = -1;
 
-  void comparePrices() {
-    final size1 = double.tryParse(size1Controller.text);
-    final price1 = double.tryParse(price1Controller.text);
-    final size2 = double.tryParse(size2Controller.text);
-    final price2 = double.tryParse(price2Controller.text);
+  @override
+  void initState() {
+    super.initState();
+    addInputRow();
+    addInputRow();
+  }
 
-    if (size1 == null ||
-        price1 == null ||
-        size2 == null ||
-        price2 == null ||
-        size1 == 0 ||
-        size2 == 0) {
-      setState(() {
-        resultTitle = 'ข้อมูลไม่ถูกต้อง';
-        resultDetail = 'กรุณากรอกขนาดและราคาให้ครบถ้วน';
-        cheaperIndex = 0;
-      });
-      return;
-    }
+  void addInputRow() {
+    setState(() {
+      sizeControllers.add(TextEditingController());
+      priceControllers.add(TextEditingController());
+    });
+  }
 
-    final unitPrice1 = price1 / size1;
-    final unitPrice2 = price2 / size2;
-
-    if (unitPrice1 < unitPrice2) {
-      final percent = ((unitPrice2 - unitPrice1) / unitPrice2) * 100;
-      final diffPerUnit = unitPrice2 - unitPrice1;
-      final savedTotal = diffPerUnit * size1; // ขนาดของสินค้าที่ถูกกว่า
-
-      setState(() {
-        cheaperIndex = 1;
-        resultTitle = '🎉 รายการที่ 1 คุ้มค่ากว่า';
-        resultDetail =
-            'ถูกกว่ารายการที่ 2 ทั้งหมด ${percent.toStringAsFixed(2)}%\n'
-            'รวมแล้วประหยัด ${savedTotal.toStringAsFixed(2)} บาท';
-      });
-    } else if (unitPrice2 < unitPrice1) {
-      final percent = ((unitPrice1 - unitPrice2) / unitPrice1) * 100;
-      final diffPerUnit = unitPrice1 - unitPrice2;
-      final savedTotal = diffPerUnit * size2;
-
-      setState(() {
-        cheaperIndex = 2;
-        resultTitle = '🎉 รายการที่ 2 คุ้มค่ากว่า';
-        resultDetail =
-            'ถูกกว่ารายการที่ 1 ทั้งหมด ${percent.toStringAsFixed(2)}%\n'
-            'รวมแล้วประหยัด ${savedTotal.toStringAsFixed(2)} บาท';
-      });
-    } else {
-      setState(() {
-        cheaperIndex = 0;
-        resultTitle = '😐 ราคาต่อหน่วยเท่ากัน';
-        resultDetail =
-            'ทั้งสองรายการมีราคาต่อหน่วยเท่ากัน (${unitPrice1.toStringAsFixed(2)} ต่อหน่วย)';
-      });
-    }
+  void removeInputRow(int index) {
+    if (sizeControllers.length <= 1) return;
+    setState(() {
+      sizeControllers[index].dispose();
+      priceControllers[index].dispose();
+      sizeControllers.removeAt(index);
+      priceControllers.removeAt(index);
+      cheaperIndex = -1;
+      resultTitle = '';
+      resultDetail = '';
+    });
   }
 
   void resetFields() {
     setState(() {
-      size1Controller.clear();
-      price1Controller.clear();
-      size2Controller.clear();
-      price2Controller.clear();
+      for (var c in sizeControllers) c.dispose();
+      for (var c in priceControllers) c.dispose();
+      sizeControllers.clear();
+      priceControllers.clear();
       resultTitle = '';
       resultDetail = '';
-      cheaperIndex = 0;
+      cheaperIndex = -1;
+      addInputRow();
+      addInputRow();
+    });
+  }
+
+  void comparePrices() {
+    final unitPrices = <double>[];
+    final sizes = <double>[];
+    final prices = <double>[];
+
+    for (int i = 0; i < sizeControllers.length; i++) {
+      final size = double.tryParse(sizeControllers[i].text);
+      final price = double.tryParse(priceControllers[i].text);
+
+      if (size == null || price == null || size == 0) {
+        setState(() {
+          resultTitle = 'ข้อมูลไม่ถูกต้อง';
+          resultDetail = 'กรุณากรอกขนาดและราคาให้ครบถ้วน';
+          cheaperIndex = -1;
+        });
+        return;
+      }
+
+      unitPrices.add(price / size);
+      sizes.add(size);
+      prices.add(price);
+    }
+
+    final minUnitPrice = unitPrices.reduce((a, b) => a < b ? a : b);
+    final minIndex = unitPrices.indexOf(minUnitPrice);
+
+    // คำนวณความแตกต่าง
+    double maxSaving = 0;
+    double maxPercent = 0;
+    int comparedIndex = -1;
+
+    for (int i = 0; i < unitPrices.length; i++) {
+      if (i == minIndex) continue;
+
+      final diffPerUnit = unitPrices[i] - minUnitPrice;
+      final savedTotal = diffPerUnit * sizes[minIndex];
+      final percent = (diffPerUnit / unitPrices[i]) * 100;
+
+      if (savedTotal > maxSaving) {
+        maxSaving = savedTotal;
+        maxPercent = percent;
+        comparedIndex = i;
+      }
+    }
+
+    setState(() {
+      cheaperIndex = minIndex;
+      resultTitle = '🎉 รายการที่ ${minIndex + 1} คุ้มค่ากว่า';
+
+      if (comparedIndex != -1) {
+        resultDetail = 'ราคาต่อหน่วย ${minUnitPrice.toStringAsFixed(2)} บาท\n'
+            'ถูกกว่ารายการที่ ${comparedIndex + 1} ประมาณ ${maxPercent.toStringAsFixed(2)}%\n'
+            'รวมแล้วประหยัด ${maxSaving.toStringAsFixed(2)} บาท';
+      } else {
+        resultDetail = 'ราคาต่อหน่วย ${minUnitPrice.toStringAsFixed(2)} บาท';
+      }
     });
   }
 
@@ -92,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
     required TextEditingController priceCtrl,
   }) {
     final isCheapest = cheaperIndex == index;
-    final borderColor = isCheapest ? Colors.green : Colors.grey.shade300;
 
     return Card(
       elevation: 2,
@@ -106,10 +134,19 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('รายการที่ $index',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Text('รายการที่ ${index + 1}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (sizeControllers.length > 1)
+                  IconButton(
+                    onPressed: () => removeInputRow(index),
+                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                  )
+              ],
+            ),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -119,15 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: 'ขนาด',
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: borderColor),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(
-                          color: isCheapest ? Colors.green : Colors.blueAccent,
-                          width: 2,
-                        ),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
@@ -140,15 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: 'ราคา',
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: borderColor),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(
-                          color: isCheapest ? Colors.green : Colors.blueAccent,
-                          width: 2,
-                        ),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
@@ -164,10 +185,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    size1Controller.dispose();
-    price1Controller.dispose();
-    size2Controller.dispose();
-    price2Controller.dispose();
+    for (var c in sizeControllers) c.dispose();
+    for (var c in priceControllers) c.dispose();
     super.dispose();
   }
 
@@ -187,16 +206,33 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             const SizedBox(height: 40),
-            buildInputRow(
-              index: 1,
-              sizeCtrl: size1Controller,
-              priceCtrl: price1Controller,
+            ...List.generate(
+              sizeControllers.length,
+              (index) => buildInputRow(
+                index: index,
+                sizeCtrl: sizeControllers[index],
+                priceCtrl: priceControllers[index],
+              ),
             ),
             const SizedBox(height: 10),
-            buildInputRow(
-              index: 2,
-              sizeCtrl: size2Controller,
-              priceCtrl: price2Controller,
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: addInputRow,
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: const Text(
+                  'เพิ่มรายการ',
+                  style: TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
